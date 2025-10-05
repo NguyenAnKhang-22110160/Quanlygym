@@ -1,184 +1,320 @@
-﻿using Neo4j.Driver;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using DBL;
+using Neo4j.Driver;
 
 namespace BAL
 {
-	public class DBKhachhang : Neo4jBase
-	{
-		public DBKhachhang() : base() { }
+    public class DBKhachhang : IDisposable
+    {
+        private readonly Neo4jService _neo4jService;
 
-		// Lấy tất cả khách hàng
-		public async Task<List<Dictionary<string, object>>> LayKhachHang()
-		{
-			string cypher = @"
-                MATCH (kh:KhachHang)
-                RETURN kh.MaKH AS MaKH,
-                       kh.TenKH AS TenKH,
-                       kh.GioiTinh AS GioiTinh,
-                       kh.SDT AS SDT,
-                       kh.Email AS Email,
-                       kh.DiaChi AS DiaChi,
-                       kh.NgayTao AS NgayTao
-                ORDER BY kh.MaKH";
+        public DBKhachhang()
+        {
+            // Sử dụng kết nối mặc định đã được cấu hình trong Neo4jService
+            _neo4jService = new Neo4jService();
+        }
 
-			var records = await ExecuteReadQueryAsync(cypher);
-			return ConvertToDictionaryList(records);
-		}
+        #region CRUD OPERATIONS
+        public async Task<bool> ThemKhachHang(string maKH, string tenKH, string gioiTinh, string sdt, string email, string diaChi)
+        {
+            try
+            {
+                string query = @"
+                    CREATE (kh:Person {
+                        id: $maKH, 
+                        name: $tenKH, 
+                        gender: $gioiTinh, 
+                        phone: $sdt, 
+                        email: $email, 
+                        type: 'Khách hàng', 
+                        address: $diaChi,
+                        join_date: date(),
+                        customer_type: 'Thường'
+                    })";
 
-		// Thêm khách hàng
-		public async Task<bool> ThemKhachHang(string MaKH, string TenKH, string GioiTinh, int SDT, string Email, string DiaChi)
-		{
-			string cypher = @"
-                CREATE (kh:KhachHang {
-                    MaKH: $maKH,
-                    TenKH: $tenKH,
-                    GioiTinh: $gioiTinh,
-                    SDT: $sdt,
-                    Email: $email,
-                    DiaChi: $diaChi,
-                    NgayTao: datetime()
-                })";
+                var parameters = new { maKH, tenKH, gioiTinh, sdt, email, diaChi };
+                await _neo4jService.ExecuteWriteAsync(query, parameters);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Lỗi thêm khách hàng: {ex.Message}");
+            }
+        }
 
-			var parameters = new
-			{
-				maKH = MaKH,
-				tenKH = TenKH,
-				gioiTinh = GioiTinh,
-				sdt = SDT,
-				email = Email,
-				diaChi = DiaChi
-			};
+        public async Task<bool> SuaKhachHang(string maKH, string tenKH, string gioiTinh, string sdt, string email, string diaChi)
+        {
+            try
+            {
+                string query = @"
+                    MATCH (kh:Person {id: $maKH, type: 'Khách hàng'})
+                    SET kh.name = $tenKH,
+                        kh.gender = $gioiTinh,
+                        kh.phone = $sdt,
+                        kh.email = $email,
+                        kh.address = $diaChi";
 
-			return await ExecuteWriteQueryAsync(cypher, parameters);
-		}
+                var parameters = new { maKH, tenKH, gioiTinh, sdt, email, diaChi };
+                await _neo4jService.ExecuteWriteAsync(query, parameters);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Lỗi sửa khách hàng: {ex.Message}");
+            }
+        }
 
-		// Sửa khách hàng
-		public async Task<bool> SuaKhachHang(string MaKH, string TenKH, string GioiTinh, int SDT, string Email, string DiaChi)
-		{
-			string cypher = @"
-                MATCH (kh:KhachHang {MaKH: $maKH})
-                SET kh.TenKH = $tenKH,
-                    kh.GioiTinh = $gioiTinh,
-                    kh.SDT = $sdt,
-                    kh.Email = $email,
-                    kh.DiaChi = $diaChi,
-                    kh.NgayCapNhat = datetime()";
+        public async Task<bool> XoaKhachHang(string maKH)
+        {
+            try
+            {
+                string query = @"
+                    MATCH (kh:Person {id: $maKH, type: 'Khách hàng'})
+                    DETACH DELETE kh";
 
-			var parameters = new
-			{
-				maKH = MaKH,
-				tenKH = TenKH,
-				gioiTinh = GioiTinh,
-				sdt = SDT,
-				email = Email,
-				diaChi = DiaChi
-			};
+                var parameters = new { maKH };
+                await _neo4jService.ExecuteWriteAsync(query, parameters);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Lỗi xóa khách hàng: {ex.Message}");
+            }
+        }
 
-			return await ExecuteWriteQueryAsync(cypher, parameters);
-		}
+        public async Task<List<Dictionary<string, object>>> GetTatCaKhachHang()
+        {
+            try
+            {
+                string query = @"
+                    MATCH (kh:Person {type: 'Khách hàng'})
+                    RETURN kh.id as MaKH, kh.name as TenKH, kh.gender as GioiTinh, 
+                           kh.phone as SDT, kh.email as Email, kh.address as DiaChi,
+                           kh.join_date as NgayThamGia, kh.customer_type as LoaiKH
+                    ORDER BY kh.name";
 
-		// Xóa khách hàng
-		public async Task<bool> XoaKhachHang(string MaKH)
-		{
-			string cypher = @"
-                MATCH (kh:KhachHang {MaKH: $maKH})
-                DETACH DELETE kh";
+                var results = await _neo4jService.ExecuteQueryAsync(query);
+                return ConvertToDictionaryList(results);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Lỗi lấy danh sách khách hàng: {ex.Message}");
+            }
+        }
+        #endregion
 
-			return await ExecuteWriteQueryAsync(cypher, new { maKH = MaKH });
-		}
+        #region ADVANCED QUERIES
+        public async Task<List<Dictionary<string, object>>> TimKiemKhachHang(string tenKH = null, string diaChi = null, string gioiTinh = null)
+        {
+            try
+            {
+                string query = @"
+                    MATCH (kh:Person {type: 'Khách hàng'})
+                    WHERE ($tenKH IS NULL OR kh.name CONTAINS $tenKH)
+                    AND ($diaChi IS NULL OR kh.address CONTAINS $diaChi)
+                    AND ($gioiTinh IS NULL OR kh.gender = $gioiTinh)
+                    RETURN kh.id as MaKH, kh.name as TenKH, kh.gender as GioiTinh, 
+                           kh.phone as SDT, kh.email as Email, kh.address as DiaChi
+                    ORDER BY kh.name";
 
-		// Tìm kiếm khách hàng
-		public async Task<List<Dictionary<string, object>>> TimKiemKhachHang(string MaKH, string TenKH, string GioiTinh, int? SDT, string Email, string DiaChi)
-		{
-			var conditions = new List<string>();
-			var parameters = new Dictionary<string, object>();
+                var parameters = new { tenKH, diaChi, gioiTinh };
+                var results = await _neo4jService.ExecuteQueryAsync(query, parameters);
+                return ConvertToDictionaryList(results);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Lỗi tìm kiếm khách hàng: {ex.Message}");
+            }
+        }
 
-			if (!string.IsNullOrEmpty(MaKH))
-			{
-				conditions.Add("kh.MaKH = $maKH");
-				parameters.Add("maKH", MaKH);
-			}
+        public async Task<List<Dictionary<string, object>>> GetKhachHangMuaNhieuNhat(int top = 10)
+        {
+            try
+            {
+                string query = @"
+                    MATCH (kh:Person {type: 'Khách hàng'})-[:PURCHASED]->(t:Transaction)
+                    RETURN kh.id as MaKH, kh.name as TenKH, 
+                           count(t) as SoHoaDon, sum(t.total_amount) as TongChiTieu
+                    ORDER BY TongChiTieu DESC
+                    LIMIT $top";
 
-			if (!string.IsNullOrEmpty(TenKH))
-			{
-				conditions.Add("kh.TenKH CONTAINS $tenKH");
-				parameters.Add("tenKH", TenKH);
-			}
+                var parameters = new { top };
+                var results = await _neo4jService.ExecuteQueryAsync(query, parameters);
+                return ConvertToDictionaryList(results);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Lỗi lấy khách hàng mua nhiều nhất: {ex.Message}");
+            }
+        }
 
-			if (!string.IsNullOrEmpty(GioiTinh))
-			{
-				conditions.Add("kh.GioiTinh = $gioiTinh");
-				parameters.Add("gioiTinh", GioiTinh);
-			}
+        public async Task<List<Dictionary<string, object>>> GetKhachHangVIP()
+        {
+            try
+            {
+                string query = @"
+                    MATCH (kh:Person {type: 'Khách hàng'})-[:PURCHASED]->(t:Transaction)
+                    WITH kh, sum(t.total_amount) as TongChiTieu
+                    WHERE TongChiTieu > 5000000
+                    RETURN kh.id as MaKH, kh.name as TenKH, TongChiTieu,
+                           kh.customer_type as LoaiKH
+                    ORDER BY TongChiTieu DESC";
 
-			if (SDT.HasValue)
-			{
-				conditions.Add("kh.SDT = $sdt");
-				parameters.Add("sdt", SDT.Value);
-			}
+                var results = await _neo4jService.ExecuteQueryAsync(query);
+                return ConvertToDictionaryList(results);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Lỗi lấy khách hàng VIP: {ex.Message}");
+            }
+        }
 
-			if (!string.IsNullOrEmpty(Email))
-			{
-				conditions.Add("kh.Email CONTAINS $email");
-				parameters.Add("email", Email);
-			}
+        public async Task<List<Dictionary<string, object>>> GetLichSuMuaHang(string maKH)
+        {
+            try
+            {
+                string query = @"
+                    MATCH (kh:Person {id: $maKH})-[:PURCHASED]->(t:Transaction)-[:INCLUDES]->(p:Product)
+                    RETURN t.id as MaHD, t.transaction_time as ThoiGian,
+                           p.name as SanPham, t.quantity as SoLuong,
+                           t.total_amount as ThanhTien
+                    ORDER BY t.transaction_time DESC";
 
-			if (!string.IsNullOrEmpty(DiaChi))
-			{
-				conditions.Add("kh.DiaChi CONTAINS $diaChi");
-				parameters.Add("diaChi", DiaChi);
-			}
+                var parameters = new { maKH };
+                var results = await _neo4jService.ExecuteQueryAsync(query, parameters);
+                return ConvertToDictionaryList(results);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Lỗi lấy lịch sử mua hàng: {ex.Message}");
+            }
+        }
 
-			string whereClause = conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : "";
+        public async Task<List<Dictionary<string, object>>> GetGoiYSanPham(string maKH)
+        {
+            try
+            {
+                string query = @"
+                    MATCH (kh:Person {id: $maKH})-[:PURCHASED]->(:Transaction)-[:INCLUDES]->(spDaMua:Product)
+                    MATCH (spDaMua)-[:BELONGS_TO]->(danhMuc:Category)
+                    MATCH (danhMuc)<-[:BELONGS_TO]-(spGoiY:Product)
+                    WHERE NOT EXISTS {
+                        MATCH (kh)-[:PURCHASED]->(:Transaction)-[:INCLUDES]->(spGoiY)
+                    }
+                    RETURN DISTINCT spGoiY.name as SanPham, 
+                           danhMuc.name as DanhMuc,
+                           spGoiY.price as Gia,
+                           spGoiY.popularity as DoPhoBien
+                    ORDER BY spGoiY.popularity DESC
+                    LIMIT 5";
 
-			string cypher = $@"
-                MATCH (kh:KhachHang)
-                {whereClause}
-                RETURN kh.MaKH AS MaKH,
-                       kh.TenKH AS TenKH,
-                       kh.GioiTinh AS GioiTinh,
-                       kh.SDT AS SDT,
-                       kh.Email AS Email,
-                       kh.DiaChi AS DiaChi";
+                var parameters = new { maKH };
+                var results = await _neo4jService.ExecuteQueryAsync(query, parameters);
+                return ConvertToDictionaryList(results);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Lỗi gợi ý sản phẩm: {ex.Message}");
+            }
+        }
 
-			var records = await ExecuteReadQueryAsync(cypher, parameters);
-			return ConvertToDictionaryList(records);
-		}
+        public async Task<Dictionary<string, object>> GetThongTinChiTiet(string maKH)
+        {
+            try
+            {
+                string query = @"
+                    MATCH (kh:Person {id: $maKH, type: 'Khách hàng'})
+                    OPTIONAL MATCH (kh)-[:PURCHASED]->(t:Transaction)-[:INCLUDES]->(p:Product)
+                    OPTIONAL MATCH (kh)-[:BECAME_MEMBER]->(tv:Person)
+                    WITH kh, 
+                         count(DISTINCT t) as TongDonHang,
+                         sum(t.total_amount) as TongChiTieu,
+                         collect(DISTINCT p.name) as SanPhamDaMua
+                    RETURN kh.id as MaKH, kh.name as TenKH, kh.gender as GioiTinh,
+                           kh.phone as SDT, kh.email as Email, kh.address as DiaChi,
+                           kh.join_date as NgayThamGia, kh.customer_type as LoaiKH,
+                           TongDonHang, TongChiTieu, SanPhamDaMua";
 
-		// Thống kê khách hàng theo giới tính
-		public async Task<List<Dictionary<string, object>>> ThongKeKhachHangTheoGioiTinh()
-		{
-			string cypher = @"
-                MATCH (kh:KhachHang)
-                RETURN kh.GioiTinh AS GioiTinh,
-                       COUNT(kh) AS SoLuong,
-                       COLLECT(kh.MaKH) AS DanhSachMaKH
-                ORDER BY SoLuong DESC";
+                var results = await _neo4jService.ExecuteQueryAsync(query, new { maKH });
 
-			var records = await ExecuteReadQueryAsync(cypher);
-			return ConvertToDictionaryList(records);
-		}
+                if (results.Count > 0)
+                {
+                    var record = results[0];
+                    return new Dictionary<string, object>
+                    {
+                        ["MaKH"] = record["MaKH"].As<string>(),
+                        ["TenKH"] = record["TenKH"].As<string>(),
+                        ["GioiTinh"] = record["GioiTinh"].As<string>(),
+                        ["SDT"] = record["SDT"].As<string>(),
+                        ["Email"] = record["Email"].As<string>(),
+                        ["DiaChi"] = record["DiaChi"].As<string>(),
+                        ["NgayThamGia"] = record["NgayThamGia"].As<LocalDate>().ToString(),
+                        ["LoaiKH"] = record["LoaiKH"].As<string>(),
+                        ["TongDonHang"] = record["TongDonHang"].As<int>(),
+                        ["TongChiTieu"] = record["TongChiTieu"].As<long>(),
+                        ["SanPhamDaMua"] = record["SanPhamDaMua"].As<List<string>>()
+                    };
+                }
 
-		private List<Dictionary<string, object>> ConvertToDictionaryList(List<IRecord> records)
-		{
-			var result = new List<Dictionary<string, object>>();
-			foreach (var record in records)
-			{
-				result.Add(ConvertToDictionary(record));
-			}
-			return result;
-		}
+                return null;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Lỗi lấy thông tin chi tiết: {ex.Message}");
+            }
+        }
+        #endregion
 
-		private Dictionary<string, object> ConvertToDictionary(IRecord record)
-		{
-			var dict = new Dictionary<string, object>();
-			foreach (var key in record.Keys)
-			{
-				dict[key] = record[key];
-			}
-			return dict;
-		}
-	}
+        #region CONNECTION TEST METHODS
+        public async Task<bool> KiemTraKetNoi()
+        {
+            try
+            {
+                return await _neo4jService.TestConnectionAsync();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Lỗi kiểm tra kết nối: {ex.Message}");
+            }
+        }
+
+        public async Task<string> GetDatabaseInfo()
+        {
+            try
+            {
+                return await _neo4jService.GetDatabaseInfoAsync();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Lỗi lấy thông tin database: {ex.Message}");
+            }
+        }
+        #endregion
+
+        #region HELPER METHODS
+        private List<Dictionary<string, object>> ConvertToDictionaryList(List<IRecord> records)
+        {
+            var result = new List<Dictionary<string, object>>();
+
+            foreach (var record in records)
+            {
+                var dict = new Dictionary<string, object>();
+                foreach (var key in record.Keys)
+                {
+                    dict[key] = record[key]?.As<object>();
+                }
+                result.Add(dict);
+            }
+
+            return result;
+        }
+        #endregion
+
+        public void Dispose()
+        {
+            _neo4jService?.Dispose();
+        }
+    }
 }
